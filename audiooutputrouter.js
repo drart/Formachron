@@ -82,10 +82,11 @@ function anything(){
 }
 
 function routeChannel(channelName){
-    post("AudioOutputRouter: routeChannel called with '" + channelName + "'\n");
+    // post("AudioOutputRouter: routeChannel called with '" + channelName + "'\n");
+    // post("AudioOutputRouter: inlet variable = " + inlet + " (type: " + typeof inlet + ")\n");
     var voiceIndex = inlet;  // Inlet 0-7
     var outputIndex = voiceIndex + 1;  // Output 1-8 (skip output 0 which is default)
-    post("AudioOutputRouter: voiceIndex = " + voiceIndex + ", outputIndex = " + outputIndex + "\n");
+    // post("AudioOutputRouter: voiceIndex = " + voiceIndex + ", outputIndex = " + outputIndex + "\n");
 
     if(audioOutputIds.length === 0){
         post("AudioOutputRouter: ERROR - Not initialized. Send bang first.\n");
@@ -117,20 +118,44 @@ function routeChannel(channelName){
         var noOutputId = findRoutingTypeIdentifier(availableRoutingTypes, "No Output");
         if(noOutputId !== null){
             deviceIO.set("routing_type", {"identifier": noOutputId});
+            post("AudioOutputRouter: Voice " + voiceIndex + " set to No Output\n");
+        } else {
+            post("AudioOutputRouter: ERROR - Could not find 'No Output' in available_routing_types\n");
         }
         return;
     }
 
-    // Find "Ext. Out" identifier from available_routing_types
+    // For numbered channels, verify Ext. Out is available before attempting to route
     post("AudioOutputRouter: Voice " + voiceIndex + " -> searching for '" + channelName + "'\n");
     var extOutId = findRoutingTypeIdentifier(availableRoutingTypes, "Ext. Out");
+
+    if(extOutId === null){
+        post("AudioOutputRouter: ERROR - 'Ext. Out' not available for this output\n");
+        post("AudioOutputRouter: Cannot route to channel '" + channelName + "'\n");
+        return;
+    }
+
     post("AudioOutputRouter: Found Ext. Out identifier = " + extOutId + "\n");
 
-    if(extOutId !== null){
-        post("AudioOutputRouter: Setting routing_type to Ext. Out (identifier " + extOutId + ")\n");
-        deviceIO.set("routing_type", {"identifier": extOutId});
-    } else {
-        post("AudioOutputRouter: ERROR - Could not find 'Ext. Out' in available_routing_types\n");
+    // Set routing type to Ext. Out
+    post("AudioOutputRouter: Setting routing_type to Ext. Out (identifier " + extOutId + ")\n");
+    deviceIO.set("routing_type", {"identifier": extOutId});
+
+    // Verify the routing type was set correctly
+    var verifyRoutingType = deviceIO.get("routing_type");
+    var verifyData = verifyRoutingType;
+    if(typeof verifyData === "string"){
+        verifyData = JSON.parse(verifyData);
+    }
+    if(Array.isArray(verifyData) && verifyData.length > 0){
+        if(typeof verifyData[0] === "string"){
+            verifyData = JSON.parse(verifyData[0]);
+        }
+    }
+
+    // Check if routing_type was successfully set to Ext. Out
+    if(verifyData.routing_type && verifyData.routing_type.identifier !== extOutId){
+        post("AudioOutputRouter: ERROR - Failed to set routing_type to Ext. Out\n");
         return;
     }
 

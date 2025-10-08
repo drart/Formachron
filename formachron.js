@@ -104,7 +104,7 @@ function cell(x, y, v){
 }
 
 /// get voice and index from sequencer and prepare MIDI for hardware display
-function syncstep ( voiceNumber, sequenceIndex ) {
+function syncstep ( sequenceIndex, voiceNumber ) {
 	var r = thegrid.regions[ voiceNumber ]; // returns the region 
     console.log( "received voice number " + voiceNumber + " grid length " + thegrid.regions.length);
 
