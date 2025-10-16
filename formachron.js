@@ -90,6 +90,8 @@ function cell(x, y, v){
             // Handle sequence selection messages
             if(messages[i].channel === 'sequence_selected'){
                 updateSceneButtonsForSelectedSequence(messages[i].data);
+                // Send selectedSequence message to Max patch (zero-indexed: 0-7)
+                outlet(0, 'selectedSequence', messages[i].data);
             } else if(messages[i].channel === 'sequence_deselected'){
                 // Optional: could show default state when no sequence selected
                 // post('No sequence selected\n');

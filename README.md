@@ -33,6 +33,10 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 - **Null-safe data structures**: Efficient voice management without array reordering
 
 ## TODO
+- Investigate playhead position on new sequence creation (starts mid-sequence, not at 0)
+  - Add debugging tools to log phasor state vs. sequencer state vs. visual feedback
+  - Consider options: wait for downbeat, reset phase to 0, or queue sequences
+- Send `selectedSequence -1` when all sequences are deleted (deselection case)
 - Write sequences into Ableton clips
 - Read clips into Formachron sequences
 - End behavior modes (hold, repeat)
