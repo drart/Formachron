@@ -7,11 +7,10 @@ An 8-voice ansiorhythmic sequencer for Ableton Push, designed for live performan
 
 Formachron reimagines grid-based sequencing by allowing each region to have independent:
 - **Length** (1-8 beats)
-- **Subdivision** (quarter, eighth, sixteenth, thirty-second notes, straight or tuplet)
+- **Subdivision** (any number of subdivisions of a beat, from 1-8, and the ability to change subdivision for each beat of the sequence)
 - **Phase** (starting point within the loop)
 
 Unlike traditional grid sequencers that limit all patterns to a single subdivision, Formachron's spatial notation system lets you draw regions anywhere on an 8x8 grid, with each region representing a unique rhythmic voice.
-
 
 ## Features
 
@@ -19,23 +18,15 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 - **8 independent voices** with spatial grid representation
 - **Mode switching** via Push buttons (Shift, Select, Mute, Delete, New, etc.)
 - **Scene Launch buttons** control subdivision mode per sequence
-- **Reset modes**: Loop or beat-sync
 - **Phase shifting**: Set start point within sequence loop
 - **Per-step muting**: Individual note probability control
 - **Audio routing**: Route each voice to external outputs (1-16)
 - **Live API integration**: Device selection awareness and control surface management
 - **LED feedback**: Real-time visual feedback on Push pads and buttons
 
-### Architecture
-- **Separation of concerns**: Grid (spatial), Sequencer (timing), Mediator (coordination)
-- **Parallel array synchronization**: Grid regions and sequences maintain matched indices
-- **Dynamic Live API queries**: No hardcoded identifiers for audio routing or control surfaces
-- **Null-safe data structures**: Efficient voice management without array reordering
-
 ## TODO
-- Investigate playhead position on new sequence creation (starts mid-sequence, not at 0)
-  - Add debugging tools to log phasor state vs. sequencer state vs. visual feedback
-  - Consider options: wait for downbeat, reset phase to 0, or queue sequences
+- Add debugging tools to log phasor state vs. sequencer state vs. visual feedback
+- Consider options: wait for downbeat, reset phase to 0, or queue sequences
 - Send `selectedSequence -1` when all sequences are deleted (deselection case)
 - Write sequences into Ableton clips
 - Read clips into Formachron sequences
@@ -45,6 +36,8 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 
 ## Known Issues
 - Single-note regions don't flash (design decision: should they subdivide?)
+- saving Ableton device can cause crashing. Workaround is to develop and save as new device. Trying to understand if it is the dev path that is causing this crash.
+- current workflow is to past formachron.axmd into a new device, set up the dev path and open in presentation mode setting, and then resave. Subsequent saves create crashes. 
 
 ## Citation
 
