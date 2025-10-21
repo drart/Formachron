@@ -98,7 +98,6 @@ function cell(x, y, v){
             } else {
                 outlet(0, messages[i].channel, messages[i].data );
             }
-            console.log( messages[i] );
         }
 	}else{
 		mediator.push( newcell );

@@ -31,38 +31,6 @@ function bang(){
     post("  0 = No Output, 1-16 = Ext. Out channels 1-16\n");
 }
 
-function test_channels(){
-    if(audioOutputIds.length === 0){
-        post("AudioOutputRouter: ERROR - Not initialized. Send bang first.\n");
-        return;
-    }
-
-    post("\n=== Testing available channels for output 1 (voice 0) ===\n");
-
-    var outputId = audioOutputIds[1];  // Voice 0 = output index 1
-    var deviceIO = new LiveAPI(null, "id " + outputId);
-
-    // Get available routing types and find Ext. Out
-    var availableRoutingTypes = deviceIO.get("available_routing_types");
-    var extOutId = findRoutingTypeIdentifier(availableRoutingTypes, "Ext. Out");
-
-    if(extOutId === null){
-        post("ERROR: Could not find 'Ext. Out' in available_routing_types\n");
-        return;
-    }
-
-    // Set to Ext. Out
-    post("Setting routing_type to Ext. Out (identifier " + extOutId + ")...\n");
-    deviceIO.set("routing_type", {"identifier": extOutId});
-
-    // Get available channels
-    var availableChannels = deviceIO.get("available_routing_channels");
-    post("available_routing_channels: " + JSON.stringify(availableChannels) + "\n");
-    post("Type: " + typeof availableChannels + "\n");
-
-    post("=== Done ===\n");
-}
-
 function msg_int(channel){
     post("AudioOutputRouter: msg_int received: " + channel + " (type: " + typeof channel + ")\n");
     // Convert integer to string and route
@@ -82,98 +50,131 @@ function anything(){
 }
 
 function routeChannel(channelName){
-    // post("AudioOutputRouter: routeChannel called with '" + channelName + "'\n");
-    // post("AudioOutputRouter: inlet variable = " + inlet + " (type: " + typeof inlet + ")\n");
     var voiceIndex = inlet;  // Inlet 0-7
     var outputIndex = voiceIndex + 1;  // Output 1-8 (skip output 0 which is default)
-    // post("AudioOutputRouter: voiceIndex = " + voiceIndex + ", outputIndex = " + outputIndex + "\n");
 
+    // Check if initialized
     if(audioOutputIds.length === 0){
-        post("AudioOutputRouter: ERROR - Not initialized. Send bang first.\n");
-        return;
+        post("AudioOutputRouter: Not initialized, attempting auto-initialization...\n");
+        bang();
+
+        if(audioOutputIds.length === 0){
+            post("AudioOutputRouter: ERROR - Auto-initialization failed for voice " + voiceIndex + "\n");
+            return;
+        }
     }
 
     if(outputIndex >= audioOutputIds.length){
-        post("AudioOutputRouter: ERROR - Voice " + voiceIndex + " out of range\n");
+        post("AudioOutputRouter: ERROR - Voice " + voiceIndex + " out of range (outputIndex " + outputIndex + " >= " + audioOutputIds.length + ")\n");
         return;
     }
 
-    var outputId = audioOutputIds[outputIndex];
-    post("AudioOutputRouter: Using outputId = " + outputId + "\n");
-    var deviceIO = new LiveAPI(null, "id " + outputId);
-    post("AudioOutputRouter: deviceIO.id = " + deviceIO.id + ", deviceIO.type = " + deviceIO.type + "\n");
+    var success = attemptRoute(voiceIndex, outputIndex, channelName);
 
-    // Check current routing_type
-    var currentRoutingType = deviceIO.get("routing_type");
-    post("AudioOutputRouter: Current routing_type = " + JSON.stringify(currentRoutingType) + "\n");
+    if(!success){
+        post("AudioOutputRouter: First attempt failed for voice " + voiceIndex + ", reinitializing...\n");
+
+        // Reinitialize
+        bang();
+
+        if(audioOutputIds.length === 0){
+            post("AudioOutputRouter: ERROR - Reinitialization failed for voice " + voiceIndex + "\n");
+            return;
+        }
+
+        // Retry once
+        success = attemptRoute(voiceIndex, outputIndex, channelName);
+
+        if(!success){
+            post("AudioOutputRouter: ERROR - Routing failed after retry for voice " + voiceIndex + "\n");
+            return;
+        }
+    }
+
+    post("AudioOutputRouter: ✓ Voice " + voiceIndex + " routed to '" + channelName + "'\n");
+}
+
+// Validate ID and perform routing - returns true on success, false on failure
+function attemptRoute(voiceIndex, outputIndex, channelName){
+    var expectedOutputId = audioOutputIds[outputIndex];
+
+    // Create LiveAPI reference
+    var deviceIO = new LiveAPI(null, "id " + expectedOutputId);
+
+    // Verify the DeviceIO ID matches what we expect
+    var actualId = parseInt(deviceIO.id);
+    if(actualId !== expectedOutputId){
+        post("AudioOutputRouter: ID mismatch for voice " + voiceIndex + " (expected " + expectedOutputId + ", got " + actualId + ")\n");
+        return false;
+    }
+
+    // Verify it's actually a DeviceIO object
+    if(deviceIO.type !== "DeviceIO"){
+        post("AudioOutputRouter: Wrong type for voice " + voiceIndex + " (expected DeviceIO, got " + deviceIO.type + ")\n");
+        return false;
+    }
+
+    post("AudioOutputRouter: Validated DeviceIO for voice " + voiceIndex + " (ID: " + actualId + ")\n");
 
     // Get available routing types
     var availableRoutingTypes = deviceIO.get("available_routing_types");
-    post("AudioOutputRouter: available_routing_types = " + JSON.stringify(availableRoutingTypes) + "\n");
 
-    // Check for special cases: "No Output" or "0"
+    // Handle "No Output" case
     if(channelName === "No" || channelName === "none" || channelName === "off" || channelName === "0"){
-        post("AudioOutputRouter: Voice " + voiceIndex + " -> No Output\n");
-        // Find "No Output" identifier from available_routing_types
         var noOutputId = findRoutingTypeIdentifier(availableRoutingTypes, "No Output");
-        if(noOutputId !== null){
-            deviceIO.set("routing_type", {"identifier": noOutputId});
-            post("AudioOutputRouter: Voice " + voiceIndex + " set to No Output\n");
-        } else {
-            post("AudioOutputRouter: ERROR - Could not find 'No Output' in available_routing_types\n");
+
+        if(noOutputId === null){
+            post("AudioOutputRouter: ERROR - 'No Output' routing type not found for voice " + voiceIndex + "\n");
+            return false;
         }
-        return;
+
+        deviceIO.set("routing_type", {"identifier": noOutputId});
+        post("AudioOutputRouter: Voice " + voiceIndex + " set to No Output\n");
+        return true;
     }
 
-    // For numbered channels, verify Ext. Out is available before attempting to route
-    post("AudioOutputRouter: Voice " + voiceIndex + " -> searching for '" + channelName + "'\n");
+    // Find Ext. Out routing type
     var extOutId = findRoutingTypeIdentifier(availableRoutingTypes, "Ext. Out");
 
     if(extOutId === null){
-        post("AudioOutputRouter: ERROR - 'Ext. Out' not available for this output\n");
-        post("AudioOutputRouter: Cannot route to channel '" + channelName + "'\n");
-        return;
+        post("AudioOutputRouter: ERROR - 'Ext. Out' not available for voice " + voiceIndex + "\n");
+        return false;
     }
-
-    post("AudioOutputRouter: Found Ext. Out identifier = " + extOutId + "\n");
 
     // Set routing type to Ext. Out
-    post("AudioOutputRouter: Setting routing_type to Ext. Out (identifier " + extOutId + ")\n");
+    post("AudioOutputRouter: Setting voice " + voiceIndex + " routing_type to Ext. Out (identifier: " + extOutId + ")\n");
     deviceIO.set("routing_type", {"identifier": extOutId});
 
-    // Verify the routing type was set correctly
-    var verifyRoutingType = deviceIO.get("routing_type");
-    var verifyData = verifyRoutingType;
-    if(typeof verifyData === "string"){
-        verifyData = JSON.parse(verifyData);
-    }
-    if(Array.isArray(verifyData) && verifyData.length > 0){
-        if(typeof verifyData[0] === "string"){
-            verifyData = JSON.parse(verifyData[0]);
-        }
+    // Verify ID hasn't changed after the set operation
+    var verifyId = parseInt(deviceIO.id);
+    if(verifyId !== expectedOutputId){
+        post("AudioOutputRouter: ERROR - ID changed after setting routing_type for voice " + voiceIndex + "\n");
+        post("  Expected ID: " + expectedOutputId + ", Got ID: " + verifyId + "\n");
+        return false;
     }
 
-    // Check if routing_type was successfully set to Ext. Out
-    if(verifyData.routing_type && verifyData.routing_type.identifier !== extOutId){
-        post("AudioOutputRouter: ERROR - Failed to set routing_type to Ext. Out\n");
-        return;
-    }
-
-    // Query available_routing_channels
-    post("AudioOutputRouter: Querying available_routing_channels...\n");
+    // Query available_routing_channels (depends on routing_type being set)
     var availableChannels = deviceIO.get("available_routing_channels");
-    post("AudioOutputRouter: availableChannels = " + availableChannels + "\n");
-    post("AudioOutputRouter: availableChannels type = " + typeof availableChannels + "\n");
-
-    // Find the channel with display_name matching channelName
     var channelIdentifier = findChannelByName(availableChannels, channelName);
 
-    if(channelIdentifier !== null){
-        deviceIO.set("routing_channel", {"identifier": channelIdentifier});
-        post("AudioOutputRouter: Voice " + voiceIndex + " routed to '" + channelName + "'\n");
-    } else {
-        post("AudioOutputRouter: ERROR - Channel '" + channelName + "' not found\n");
+    if(channelIdentifier === null){
+        post("AudioOutputRouter: ERROR - Channel '" + channelName + "' not found for voice " + voiceIndex + "\n");
+        return false;
     }
+
+    // Set the routing channel
+    post("AudioOutputRouter: Setting voice " + voiceIndex + " to channel '" + channelName + "' (identifier: " + channelIdentifier + ")\n");
+    deviceIO.set("routing_channel", {"identifier": channelIdentifier});
+
+    // Final verification - ensure ID is still correct
+    var finalId = parseInt(deviceIO.id);
+    if(finalId !== expectedOutputId){
+        post("AudioOutputRouter: ERROR - ID changed after setting routing_channel for voice " + voiceIndex + "\n");
+        post("  Expected ID: " + expectedOutputId + ", Got ID: " + finalId + "\n");
+        return false;
+    }
+
+    return true;
 }
 
 // Find routing type identifier by matching display_name
@@ -220,19 +221,15 @@ function findChannelByName(availableChannels, channelName){
     }
 
     // Handle different response formats
-    var channelsData = availableChannels;
-
-    // If it's an array, get the first element
-    if(Array.isArray(channelsData) && channelsData.length > 0){
-        channelsData = channelsData[0];
+    if(Array.isArray(availableChannels) && availableChannels.length > 0){
+        availableChannels = availableChannels[0];
     }
 
-    // If it's a string, parse it
-    if(typeof channelsData === "string"){
-        channelsData = JSON.parse(channelsData);
+    if(typeof availableChannels === "string"){
+        availableChannels = JSON.parse(availableChannels);
     }
 
-    var channels = channelsData.available_routing_channels;
+    var channels = availableChannels.available_routing_channels;
     if(!channels){
         post("AudioOutputRouter: ERROR - Could not parse channels\n");
         return null;
@@ -271,3 +268,38 @@ function parseIds(response){
     }
     return ids;
 }
+
+
+// older code
+function test_channels(){
+    if(audioOutputIds.length === 0){
+        post("AudioOutputRouter: ERROR - Not initialized. Send bang first.\n");
+        return;
+    }
+
+    post("\n=== Testing available channels for output 1 (voice 0) ===\n");
+
+    var outputId = audioOutputIds[1];  // Voice 0 = output index 1
+    var deviceIO = new LiveAPI(null, "id " + outputId);
+
+    // Get available routing types and find Ext. Out
+    var availableRoutingTypes = deviceIO.get("available_routing_types");
+    var extOutId = findRoutingTypeIdentifier(availableRoutingTypes, "Ext. Out");
+
+    if(extOutId === null){
+        post("ERROR: Could not find 'Ext. Out' in available_routing_types\n");
+        return;
+    }
+
+    // Set to Ext. Out
+    post("Setting routing_type to Ext. Out (identifier " + extOutId + ")...\n");
+    deviceIO.set("routing_type", {"identifier": extOutId});
+
+    // Get available channels
+    var availableChannels = deviceIO.get("available_routing_channels");
+    post("available_routing_channels: " + JSON.stringify(availableChannels) + "\n");
+    post("Type: " + typeof availableChannels + "\n");
+
+    post("=== Done ===\n");
+}
+

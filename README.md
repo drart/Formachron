@@ -1,7 +1,7 @@
 Formachron
 ==========
 
-An 8-voice ansiorhythmic sequencer for Ableton Push, designed for live performance and quick creation of complex polyrhythmic patterns.
+An 8-voice ansiorhythmic sequencer for Ableton Push, designed for live performance and quick creation of complex polyrhythmic, polymetric, and polyphasic patterns. Current development is focused on Ableton Push Standalone. 
 
 ## Overview
 
