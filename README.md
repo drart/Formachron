@@ -36,8 +36,7 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 
 ## Known Issues
 - Single-note regions don't flash (design decision: should they subdivide?)
-- saving Ableton device can cause crashing. Workaround is to develop and save as new device. Trying to understand if it is the dev path that is causing this crash.
-- current workflow is to past formachron.axmd into a new device, set up the dev path and open in presentation mode setting, and then resave. Subsequent saves create crashes. 
+- button_matrix syncing isn't super tight (recursive v8 calls probably not good)
 
 ## Citation
 

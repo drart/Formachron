@@ -5,7 +5,7 @@
 const ControlSurface = require('./lib/controlsurface.js');
 
 inlets = 1;
-outlets = 1;
+outlets = 2;
 
 var controlSurface = null;
 var thisDeviceId = null;
@@ -328,3 +328,4 @@ function notifydeleted(){
 
     post("ControlSurfaceHandler: Cleanup complete\n");
 }
+

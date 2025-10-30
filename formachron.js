@@ -15,11 +15,9 @@ var input = new InputManager();
 var mediator = new Mediator( thegrid , sequencer);
 var output = new OutputManager( thegrid );
 
-var colours = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'indigo', 'violet'];
-var colourNumbers = [127, 3, 13, 21, 33, 45, 49];
+//var colours = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'indigo', 'violet'];
+var colourNumbers = [127, 3, 7, 126, 14, 125, 20, 21];
 
-var defaultNotes = [60, 61, 62, 63, 64, 65, 66];
-var defaultSequenceMode = 'loop'; /// notes pattern-loop pattern-beatloop pattern-sequenceloop
 
 // Sequence mode tracking
 var sequenceModes = [
@@ -34,22 +32,6 @@ var sequenceModes = [
 ];
 var currentSequenceMode = 5;  // Default to SIXTEENTH_TUPLET
 
-
-// TODO use clearEngine intead? 
-/// send startup message to clear grid and sequencer
-for( var i = 0; i < 8; i++) {
-	outlet(0, 'setVoice', i );
-	outlet(0, 'what');
-}
-
-/*
-var results = initAbletonPush1(); // returns a list of messages to initialize buttons
-
-for ( m of results ){
-	Max.outlet('midi-output', m );
-}
-*/
-// =========== end setup
 
 // get midi input 
 function note (n,v){
@@ -93,7 +75,6 @@ function cell(x, y, v){
                 // Send selectedSequence message to Max patch (zero-indexed: 0-7)
                 outlet(0, 'selectedSequence', messages[i].data);
             } else if(messages[i].channel === 'sequence_deselected'){
-                // Optional: could show default state when no sequence selected
                 // post('No sequence selected\n');
             } else {
                 outlet(0, messages[i].channel, messages[i].data );
@@ -106,24 +87,14 @@ function cell(x, y, v){
 
 /// get voice and index from sequencer and prepare MIDI for hardware display
 function syncstep ( sequenceIndex, voiceNumber ) {
-	var r = thegrid.regions[ voiceNumber ]; // returns the region 
-    console.log( "received voice number " + voiceNumber + " grid length " + thegrid.regions.length);
-
-    var messages = mediator.sync( voiceNumber, sequenceIndex ); 
+    var messages = mediator.sync( voiceNumber, sequenceIndex );
     for( var i = 0; i < messages.length; i++){
-        outlet(0, messages[i].channel, messages[i].data ); 
+        outlet(0, messages[i].channel, messages[i].data );
     }
-
-    var messages = mediator.syncControlSurface( voiceNumber, sequenceIndex );
-    for( var i = 0; i < messages.length; i++){
-        outlet(0, messages[i].channel, messages[i].data ); 
-    }
-
 }
 
 function mode (m){
 	mediator.setMode( m );
-    console.log( mediator.mode );
 }
 
 function output_channel(channel){
@@ -186,7 +157,7 @@ function updateSceneButtonsForSelectedSequence(sequenceIndex){
 }
 
 function device_selected(isSelected){
-	console.log("formachron: device_selected=" + isSelected);
+	//post("formachron: device_selected=" + isSelected);
 
 	// When device is selected, redraw all regions
 	if(isSelected === 1){
@@ -205,42 +176,4 @@ function device_selected(isSelected){
 		// Light up Scene Launch buttons to show current sequence mode
 		updateSequenceModeButtons();
 	}
-}
-
-function initAbletonPush1(){
-		var msg = [];
-		var cc = 176;
-		var note = 144;
-		
-		var messages = [];
-		var ccs = [36, 37, 38, 39, 40, 41, 42, 43, 85, 49, 50, 85 ];
-		
-		for( let i = 0; i < 64; i++){
-			msg[0] = note;
-			msg[1] = 36 + i;
-			msg[2] = 0;
-			messages.push( [...msg] );
-		}
-		
-		for( let i = 0; i < ccs.length; i++){
-			msg[0] = cc;
-			msg[1] = ccs[i];
-			msg[2] = 1;
-			messages.push( [...msg] );
-		}
-		
-		return messages;
-}
-//Max.addHandler("clearEngine", i => {
-	
-function clearEngine(){
-    console.log('\n Clearing Engine \n' );
-    for( var i = 0; i < 8; i++) {
-        outlet(0, 'setVoice', i );
-        outlet(0, 'what');	
-    }
-}
-
-function setCurrentNoteData(n,v,p,m) {
-    mediator.setCurrentNoteData(n,v,p,m);
 }
