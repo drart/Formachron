@@ -177,3 +177,18 @@ function device_selected(isSelected){
 		updateSequenceModeButtons();
 	}
 }
+
+// Write sequence to Ableton MIDI clip
+// Usage: writeClip(voiceIndex, trackName, clipSlotIndex)
+// Example: writeClip(0, "MIDI", 0)
+function writeClip(voiceIndex, trackName, clipSlotIndex) {
+	post("formachron.writeClip: voice=" + voiceIndex + " track=" + trackName + " slot=" + clipSlotIndex + "\n");
+
+	var success = mediator.writeClip(voiceIndex, trackName, clipSlotIndex);
+
+	if(success) {
+		post("formachron.writeClip: Success\n");
+	} else {
+		post("formachron.writeClip: Failed\n");
+	}
+}

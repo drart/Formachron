@@ -122,6 +122,14 @@ function selectedDeviceCallback(args){
 
     // Filter out non-device objects (like the View itself)
     var selectedObj = new LiveAPI(null, "id " + selectedDeviceId);
+
+    // Validate ID before using (prevent stale ID issues)
+    var actualId = parseInt(selectedObj.id);
+    if(actualId !== selectedDeviceId){
+        post("ControlSurfaceHandler: Stale device ID in callback (expected " + selectedDeviceId + ", got " + actualId + ")\n");
+        return;
+    }
+
     var objType = selectedObj.type;
 
     // Accept Device, MaxDevice, PluginDevice, etc - anything containing "Device"

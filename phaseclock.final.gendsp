@@ -1,0 +1,204 @@
+{
+	"patcher" : 	{
+		"fileversion" : 1,
+		"appversion" : 		{
+			"major" : 9,
+			"minor" : 0,
+			"revision" : 9,
+			"architecture" : "x64",
+			"modernui" : 1
+		}
+,
+		"classnamespace" : "dsp.gen",
+		"rect" : [ 69.0, 99.0, 985.0, 843.0 ],
+		"gridsize" : [ 15.0, 15.0 ],
+		"boxes" : [ 			{
+				"box" : 				{
+					"id" : "obj-12",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 400.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 8"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-11",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 355.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 7"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-10",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 311.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 6"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-9",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 257.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 5"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-8",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 210.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 4"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-7",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 156.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 3"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-6",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 103.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 2"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"code" : "// ===== GEN~ PHASE CLOCK - WITH DIRECTION AND SHUFFLE SUPPORT =====\n// Mode 0 = Off/Mute, Mode 1 = Polyrhythm, Mode 2 = Polymeter\n// Direction parameter - forward (1) or backward (-1)\n// Shuffle parameter - sequential (0) or random (1)\n\n// ===== DATA BUFFERS =====\nData shuffle_buffer(128);  // Stores shuffled indices (max 128 steps)\n\n// ===== HISTORY VARIABLES =====\nHistory first_reset_seen(0);\nHistory phase_internal(0);\nHistory numberOfBeats_internal(3);\nHistory rate_internal(1);\nHistory mode_internal(0);  // Default to mode 0 (off/mute)\nHistory direction_internal(1);  // 1 = forward, -1 = backward\nHistory shuffle_internal(0);  // NEW: 0 = sequential, 1 = shuffle\nHistory shuffle_seed(0);  // NEW: Changes each cycle for different shuffle\nHistory beat1_internal(5);\nHistory beat2_internal(1);\nHistory beat3_internal(2);\nHistory beat4_internal(4);\nHistory beat5_internal(3);\nHistory beat6_internal(6);\nHistory beat7_internal(2);\nHistory beat8_internal(8);\n\n// Shared histories for both polyrhythm and polymeter modes\nHistory beat_index(0);      // Which beat we're on (0 to numberOfBeats-1)\nHistory step_in_beat(0);    // Which step within current beat (0 to beat_value-1)\nHistory beat_index_prev(0); // Previous beat_index (for detecting wrap in polymeter mode)\n// Note: total_index is calculated, not tracked in History\n\n// ===== PARAMETERS =====\nParam beat1(5);\nParam beat2(1);\nParam beat3(2);\nParam beat4(4);\nParam beat5(3);\nParam beat6(6);\nParam beat7(2);\nParam beat8(8);\nParam numberOfBeats(3);\nParam phaseOffset(0);\nParam rate(1);\nParam mode(0);  // 0 = off/mute, 1 = polyrhythm, 2 = polymeter\nParam direction(1);  // 1 = forward, -1 = backward\nParam shuffle(0);  // NEW: 0 = sequential, 1 = shuffle\n\n// ===== MAIN PROCESSING =====\n\n// Apply rate multiplier to input phasor\nphasor_rated = wrap(in1 * rate_internal);\n\n// Detect input phasor reset\nreset = abs(delta(phasor_rated)) > 0.5;\n\n// Calculate total steps using internal values\ntotal_steps = (numberOfBeats_internal >= 1) * beat1_internal +\n              (numberOfBeats_internal >= 2) * beat2_internal +\n              (numberOfBeats_internal >= 3) * beat3_internal +\n              (numberOfBeats_internal >= 4) * beat4_internal +\n              (numberOfBeats_internal >= 5) * beat5_internal +\n              (numberOfBeats_internal >= 6) * beat6_internal +\n              (numberOfBeats_internal >= 7) * beat7_internal +\n              (numberOfBeats_internal >= 8) * beat8_internal;\n\n// Protect against division by zero\ntotal_steps_safe = total_steps + (total_steps == 0);\n\n// Calculate cumulative step counts for beat determination\ncumulative1 = (numberOfBeats_internal >= 1) * beat1_internal;\ncumulative2 = (numberOfBeats_internal >= 2) * (cumulative1 + beat2_internal);\ncumulative3 = (numberOfBeats_internal >= 3) * (cumulative2 + beat3_internal);\ncumulative4 = (numberOfBeats_internal >= 4) * (cumulative3 + beat4_internal);\ncumulative5 = (numberOfBeats_internal >= 5) * (cumulative4 + beat5_internal);\ncumulative6 = (numberOfBeats_internal >= 6) * (cumulative5 + beat6_internal);\ncumulative7 = (numberOfBeats_internal >= 7) * (cumulative6 + beat7_internal);\n\n// ===== PHASE OFFSET CALCULATION =====\n// Determine which beat contains the phase offset step\noffset_beat_idx = (phase_internal < cumulative1) * 0 +\n                  (phase_internal >= cumulative1 && phase_internal < cumulative2 && numberOfBeats_internal >= 2) * 1 +\n                  (phase_internal >= cumulative2 && phase_internal < cumulative3 && numberOfBeats_internal >= 3) * 2 +\n                  (phase_internal >= cumulative3 && phase_internal < cumulative4 && numberOfBeats_internal >= 4) * 3 +\n                  (phase_internal >= cumulative4 && phase_internal < cumulative5 && numberOfBeats_internal >= 5) * 4 +\n                  (phase_internal >= cumulative5 && phase_internal < cumulative6 && numberOfBeats_internal >= 6) * 5 +\n                  (phase_internal >= cumulative6 && phase_internal < cumulative7 && numberOfBeats_internal >= 7) * 6 +\n                  (phase_internal >= cumulative7 && numberOfBeats_internal >= 8) * 7;\n\n// Calculate step within that offset beat\noffset_step_in_beat = phase_internal -\n                      (offset_beat_idx >= 1) * cumulative1 -\n                      (offset_beat_idx >= 2) * (cumulative2 - cumulative1) -\n                      (offset_beat_idx >= 3) * (cumulative3 - cumulative2) -\n                      (offset_beat_idx >= 4) * (cumulative4 - cumulative3) -\n                      (offset_beat_idx >= 5) * (cumulative5 - cumulative4) -\n                      (offset_beat_idx >= 6) * (cumulative6 - cumulative5) -\n                      (offset_beat_idx >= 7) * (cumulative7 - cumulative6);\n\n// Get the beat value for that offset beat\noffset_beat_value = (offset_beat_idx == 0) * beat1_internal +\n                    (offset_beat_idx == 1) * beat2_internal +\n                    (offset_beat_idx == 2) * beat3_internal +\n                    (offset_beat_idx == 3) * beat4_internal +\n                    (offset_beat_idx == 4) * beat5_internal +\n                    (offset_beat_idx == 5) * beat6_internal +\n                    (offset_beat_idx == 6) * beat7_internal +\n                    (offset_beat_idx == 7) * beat8_internal;\n\n// Protect against division by zero\noffset_beat_value_safe = offset_beat_value + (offset_beat_value == 0);\n\n// Calculate fractional offset (step within beat / beat value)\nfractional_offset = offset_step_in_beat / offset_beat_value_safe;\n\n// ===== APPLY OFFSET TO PHASOR =====\nphasor_with_offset = wrap(phasor_rated + fractional_offset);\n\n// Detect offset phasor wraps\nreset_with_offset = abs(delta(phasor_with_offset)) > 0.5;\n\n// ===== MODE-SPECIFIC LOGIC =====\n\n// Initialize outputs\nphasor_scaled = 0;\ncurrent_beat_value = 0;\ntotal_index_calc = 0;  // Initialize in proper scope (used by all modes)\n\nif (mode_internal == 0) {\n    // ===== MODE 0: OFF/MUTE =====\n    phasor_scaled = 0;\n    // Clear first_reset_seen to force sync on unmute\n    first_reset_seen = 0;\n    // Reset all counters\n    beat_index = 0;\n    step_in_beat = 0;\n    total_index_calc = 0;\n\n} else if (mode_internal == 1) {\n    // ===== POLYRHYTHM MODE =====\n\n    if (shuffle_internal > 0) {\n        // ===== SHUFFLE POLYRHYTHM: Use fractional offset approach =====\n        // Calculate cumulative fractional offset based on shuffled step order\n        // This allows rhythms to flow continuously across input phasor boundaries\n\n        shuffle_fractional_offset = 0;\n        i = 0;\n\n        // Accumulate fractional offsets for all shuffled steps before current position\n        while (i < step_in_beat) {\n            // Get shuffled index at position i\n            shuffled_idx_temp = peek(shuffle_buffer, i);\n\n            // Determine which beat that shuffled index belongs to\n            beat_idx_temp = (shuffled_idx_temp < cumulative1) * 0 +\n                           (shuffled_idx_temp >= cumulative1 && shuffled_idx_temp < cumulative2 && numberOfBeats_internal >= 2) * 1 +\n                           (shuffled_idx_temp >= cumulative2 && shuffled_idx_temp < cumulative3 && numberOfBeats_internal >= 3) * 2 +\n                           (shuffled_idx_temp >= cumulative3 && shuffled_idx_temp < cumulative4 && numberOfBeats_internal >= 4) * 3 +\n                           (shuffled_idx_temp >= cumulative4 && shuffled_idx_temp < cumulative5 && numberOfBeats_internal >= 5) * 4 +\n                           (shuffled_idx_temp >= cumulative5 && shuffled_idx_temp < cumulative6 && numberOfBeats_internal >= 6) * 5 +\n                           (shuffled_idx_temp >= cumulative6 && shuffled_idx_temp < cumulative7 && numberOfBeats_internal >= 7) * 6 +\n                           (shuffled_idx_temp >= cumulative7 && numberOfBeats_internal >= 8) * 7;\n\n            // Get beat value for that beat\n            beat_val_temp = (beat_idx_temp == 0) * beat1_internal +\n                           (beat_idx_temp == 1) * beat2_internal +\n                           (beat_idx_temp == 2) * beat3_internal +\n                           (beat_idx_temp == 3) * beat4_internal +\n                           (beat_idx_temp == 4) * beat5_internal +\n                           (beat_idx_temp == 5) * beat6_internal +\n                           (beat_idx_temp == 6) * beat7_internal +\n                           (beat_idx_temp == 7) * beat8_internal;\n\n            beat_val_temp_safe = beat_val_temp + (beat_val_temp == 0);\n\n            // Add fractional contribution (1/beat_value)\n            shuffle_fractional_offset = shuffle_fractional_offset + (1.0 / beat_val_temp_safe);\n\n            i = i + 1;\n        }\n\n        // Apply accumulated fractional offset to phasor\n        phasor_with_shuffle = wrap(phasor_with_offset + shuffle_fractional_offset);\n\n        // Get current shuffled index to determine phasor multiplication\n        current_shuffled_idx = peek(shuffle_buffer, step_in_beat);\n\n        // Determine which beat current shuffled index belongs to\n        current_beat_idx = (current_shuffled_idx < cumulative1) * 0 +\n                          (current_shuffled_idx >= cumulative1 && current_shuffled_idx < cumulative2 && numberOfBeats_internal >= 2) * 1 +\n                          (current_shuffled_idx >= cumulative2 && current_shuffled_idx < cumulative3 && numberOfBeats_internal >= 3) * 2 +\n                          (current_shuffled_idx >= cumulative3 && current_shuffled_idx < cumulative4 && numberOfBeats_internal >= 4) * 3 +\n                          (current_shuffled_idx >= cumulative4 && current_shuffled_idx < cumulative5 && numberOfBeats_internal >= 5) * 4 +\n                          (current_shuffled_idx >= cumulative5 && current_shuffled_idx < cumulative6 && numberOfBeats_internal >= 6) * 5 +\n                          (current_shuffled_idx >= cumulative6 && current_shuffled_idx < cumulative7 && numberOfBeats_internal >= 7) * 6 +\n                          (current_shuffled_idx >= cumulative7 && numberOfBeats_internal >= 8) * 7;\n\n        // Get beat value for phasor multiplication\n        current_beat_value = (current_beat_idx == 0) * beat1_internal +\n                            (current_beat_idx == 1) * beat2_internal +\n                            (current_beat_idx == 2) * beat3_internal +\n                            (current_beat_idx == 3) * beat4_internal +\n                            (current_beat_idx == 4) * beat5_internal +\n                            (current_beat_idx == 5) * beat6_internal +\n                            (current_beat_idx == 6) * beat7_internal +\n                            (current_beat_idx == 7) * beat8_internal;\n\n        current_beat_value_safe = current_beat_value + (current_beat_value == 0);\n\n        // Scale phasor by current shuffled beat value\n        phasor_scaled = wrap(phasor_with_shuffle * current_beat_value_safe);\n\n        // Detect scaled phasor wraps\n        step_reset = abs(delta(phasor_scaled)) > 0.5;\n\n        // Advance step counter on scaled phasor wraps\n        if (step_reset && first_reset_seen) {\n            step_in_beat = step_in_beat + 1;\n\n            // Wrap at total_steps\n            if (step_in_beat >= total_steps_safe) {\n                step_in_beat = 0;\n            }\n        }\n\n        // Set first_reset_seen\n        if (reset && !first_reset_seen) {\n            first_reset_seen = 1;\n        }\n\n        // total_index_calc is just step_in_beat in shuffle mode\n        total_index_calc = step_in_beat;\n\n    } else {\n        // ===== SEQUENTIAL POLYRHYTHM: Original logic =====\n\n        // Advance beat counter on INPUT phasor wraps (not output wraps!)\n        // Only advance if first_reset_seen is already set (skip first wrap)\n        if (reset_with_offset && first_reset_seen) {\n            beat_index = (beat_index + 1) % numberOfBeats_internal;\n            step_in_beat = 0;  // Reset step counter for new beat\n        }\n\n        // Set first_reset_seen AFTER beat advance (so first wrap doesn't advance)\n        if (reset && !first_reset_seen) {\n            first_reset_seen = 1;\n        }\n\n        // Calculate cumulative steps before current beat\n        cumulative_before_beat = (beat_index == 0) ? 0 :\n                                 (beat_index == 1) ? beat1_internal :\n                                 (beat_index == 2) ? (beat1_internal + beat2_internal) :\n                                 (beat_index == 3) ? (beat1_internal + beat2_internal + beat3_internal) :\n                                 (beat_index == 4) ? (beat1_internal + beat2_internal + beat3_internal + beat4_internal) :\n                                 (beat_index == 5) ? (beat1_internal + beat2_internal + beat3_internal + beat4_internal + beat5_internal) :\n                                 (beat_index == 6) ? (beat1_internal + beat2_internal + beat3_internal + beat4_internal + beat5_internal + beat6_internal) :\n                                 (beat1_internal + beat2_internal + beat3_internal + beat4_internal + beat5_internal + beat6_internal + beat7_internal);\n\n        // Calculate total index from cumulative + step (not manual increment)\n        total_index_calc = cumulative_before_beat + step_in_beat;\n\n        // Get current beat value directly from beat_index\n        current_beat_value = (beat_index == 0) * beat1_internal +\n                             (beat_index == 1) * beat2_internal +\n                             (beat_index == 2) * beat3_internal +\n                             (beat_index == 3) * beat4_internal +\n                             (beat_index == 4) * beat5_internal +\n                             (beat_index == 5) * beat6_internal +\n                             (beat_index == 6) * beat7_internal +\n                             (beat_index == 7) * beat8_internal;\n\n        current_beat_value_safe = current_beat_value + (current_beat_value == 0);\n\n        // Scale phasor by current beat value\n        phasor_scaled = wrap(phasor_with_offset * current_beat_value_safe);\n\n        // Detect scaled phasor wraps (steps within beat)\n        step_reset = abs(delta(phasor_scaled)) > 0.5;\n\n        // Count steps within current beat (avoid double-counting on beat change)\n        if (step_reset && !reset_with_offset && first_reset_seen) {\n            step_in_beat = step_in_beat + 1;\n\n            // Wrap step counter at beat boundary\n            if (step_in_beat >= current_beat_value_safe) {\n                step_in_beat = 0;\n            }\n        }\n    }\n\n} else if (mode_internal == 2) {\n    // ===== POLYMETER MODE =====\n\n    // Set first_reset_seen for polymeter\n    if (reset && !first_reset_seen) {\n        first_reset_seen = 1;\n    }\n\n    // Pass through offset phasor (no scaling)\n    phasor_scaled = phasor_with_offset;\n\n    // Get current beat value BEFORE incrementing\n    current_beat_value = (beat_index == 0) * beat1_internal +\n                         (beat_index == 1) * beat2_internal +\n                         (beat_index == 2) * beat3_internal +\n                         (beat_index == 3) * beat4_internal +\n                         (beat_index == 4) * beat5_internal +\n                         (beat_index == 5) * beat6_internal +\n                         (beat_index == 6) * beat7_internal +\n                         (beat_index == 7) * beat8_internal;\n\n    current_beat_value_safe = current_beat_value + (current_beat_value == 0);\n\n    // On input wrap, increment step within beat\n    if (reset_with_offset && first_reset_seen) {\n        step_in_beat = step_in_beat + 1;\n\n        // When step completes this beat, advance to next beat\n        if (step_in_beat >= current_beat_value_safe) {\n            step_in_beat = 0;\n            beat_index = (beat_index + 1) % numberOfBeats_internal;\n        }\n    }\n\n    // Calculate cumulative steps before current beat\n    cumulative_before_beat = (beat_index == 0) ? 0 :\n                             (beat_index == 1) ? beat1_internal :\n                             (beat_index == 2) ? (beat1_internal + beat2_internal) :\n                             (beat_index == 3) ? (beat1_internal + beat2_internal + beat3_internal) :\n                             (beat_index == 4) ? (beat1_internal + beat2_internal + beat3_internal + beat4_internal) :\n                             (beat_index == 5) ? (beat1_internal + beat2_internal + beat3_internal + beat4_internal + beat5_internal) :\n                             (beat_index == 6) ? (beat1_internal + beat2_internal + beat3_internal + beat4_internal + beat5_internal + beat6_internal) :\n                             (beat1_internal + beat2_internal + beat3_internal + beat4_internal + beat5_internal + beat6_internal + beat7_internal);\n\n    // Calculate total index from cumulative + step (not manual increment)\n    total_index_calc = cumulative_before_beat + step_in_beat;\n}\n\n// ===== SHUFFLE SUPPORT (NEW) =====\n// Apply shuffle lookup to total_index (happens BEFORE direction reversal)\nif (shuffle_internal > 0) {\n    // Look up shuffled index from buffer\n    total_index_shuffled = peek(shuffle_buffer, total_index_calc);\n} else {\n    // Pass through sequential index\n    total_index_shuffled = total_index_calc;\n}\n\n// ===== DIRECTION SUPPORT =====\n// Apply direction reversal to shuffled index (works for both modes!)\nif (direction_internal < 0) {\n    total_index_out = total_steps_safe - 1 - total_index_shuffled;\n} else {\n    total_index_out = total_index_shuffled;\n}\n\n// Derive beat_index_out and step_count_out from total_index_out\n// This gives us reversed beat sequence in backward mode\nbeat_index_out = (total_index_out < cumulative1) * 0 +\n                 (total_index_out >= cumulative1 && total_index_out < cumulative2 && numberOfBeats_internal >= 2) * 1 +\n                 (total_index_out >= cumulative2 && total_index_out < cumulative3 && numberOfBeats_internal >= 3) * 2 +\n                 (total_index_out >= cumulative3 && total_index_out < cumulative4 && numberOfBeats_internal >= 4) * 3 +\n                 (total_index_out >= cumulative4 && total_index_out < cumulative5 && numberOfBeats_internal >= 5) * 4 +\n                 (total_index_out >= cumulative5 && total_index_out < cumulative6 && numberOfBeats_internal >= 6) * 5 +\n                 (total_index_out >= cumulative6 && total_index_out < cumulative7 && numberOfBeats_internal >= 7) * 6 +\n                 (total_index_out >= cumulative7 && numberOfBeats_internal >= 8) * 7;\n\n// Calculate step within the beat from total_index_out\nstep_count_out = total_index_out -\n                 (beat_index_out >= 1) * cumulative1 -\n                 (beat_index_out >= 2) * (cumulative2 - cumulative1) -\n                 (beat_index_out >= 3) * (cumulative3 - cumulative2) -\n                 (beat_index_out >= 4) * (cumulative4 - cumulative3) -\n                 (beat_index_out >= 5) * (cumulative5 - cumulative4) -\n                 (beat_index_out >= 6) * (cumulative6 - cumulative5) -\n                 (beat_index_out >= 7) * (cumulative7 - cumulative6);\n\n// Note: first_reset_seen is now set within each mode's logic\n// Polyrhythm: Set AFTER beat advance check (so first wrap doesn't advance beat, starts at beat 0)\n// Polymeter: Set BEFORE step increment (so first wrap increments step 0→1)\n\n// ===== SEQUENCE BOUNDARY DETECTION =====\n// Mode 0: boundaries on input phasor resets (allows parameter staging while muted)\n// Mode 1: boundaries when beat_index wraps to 0 AND input wrap (beat advances on same sample as check)\n// Mode 2: boundaries when beat_index JUST WRAPPED to 0 (detect transition from prev != 0 to current == 0)\nsequence_boundary = (mode_internal == 0 && reset) ||\n                    (mode_internal == 1 && beat_index == 0 && reset_with_offset && first_reset_seen) ||\n                    (mode_internal == 2 && beat_index == 0 && beat_index_prev != 0 && first_reset_seen);\n\n// Update beat_index_prev for polymeter mode (after boundary detection)\nif (mode_internal == 2) {\n    beat_index_prev = beat_index;\n}\n\n// ===== PARAMETER QUEUING =====\nneeds_init = (first_reset_seen == 0);\nupdate_params = (needs_init && reset) || sequence_boundary;\n\nif (update_params) {\n    // Check for mode 0 exit BEFORE updating mode_internal\n    if (mode_internal == 0 && mode != 0) {\n        first_reset_seen = 1;\n        // Initialize counters for the mode we're entering\n        beat_index = offset_beat_idx;\n        step_in_beat = offset_step_in_beat;\n        // total_index is calculated from beat_index + step_in_beat, no need to set\n    }\n\n    phase_internal = phaseOffset;\n    numberOfBeats_internal = numberOfBeats;\n    rate_internal = rate;\n    mode_internal = mode;\n    direction_internal = direction;\n    shuffle_internal = shuffle;  // NEW: Queue shuffle parameter\n    beat1_internal = beat1;\n    beat2_internal = beat2;\n    beat3_internal = beat3;\n    beat4_internal = beat4;\n    beat5_internal = beat5;\n    beat6_internal = beat6;\n    beat7_internal = beat7;\n    beat8_internal = beat8;\n\n    // Initialize shuffle buffer to sequential order (safety for first cycle)\n    i = 0;\n    while (i < total_steps_safe) {\n        poke(shuffle_buffer, i, i);\n        i = i + 1;\n    }\n}\n\n// ===== SHUFFLE GENERATION (NEW) =====\n// Generate new random permutation at sequence boundaries (runs ONCE per cycle)\nif (sequence_boundary && shuffle_internal > 0) {\n    // Increment seed for different shuffle each cycle\n    shuffle_seed = shuffle_seed + 1;\n\n    // Fisher-Yates shuffle algorithm\n    // Loop backwards from total_steps-1 down to 1\n    i = total_steps_safe - 1;\n    while (i > 0) {\n        // Generate random index from 0 to i (inclusive)\n        // Use noise() with varying seed based on shuffle_seed and loop index\n        random_val = noise((shuffle_seed * 1000 + i) * 0.001);\n        // Convert 0-1 range to 0-i range\n        random_val = abs(random_val);  // Ensure positive\n        j = floor(random_val * (i + 1));\n\n        // Clamp j to valid range (safety)\n        if (j > i) {\n            j = i;\n        }\n        if (j < 0) {\n            j = 0;\n        }\n\n        // Swap elements at positions i and j\n        temp = peek(shuffle_buffer, i);\n        poke(shuffle_buffer, i, peek(shuffle_buffer, j));\n        poke(shuffle_buffer, j, temp);\n\n        i = i - 1;\n    }\n}\n\n// Active when mode != 0, numberOfBeats > 0, and first reset seen\nactive = (mode_internal != 0) && (numberOfBeats_internal > 0) && first_reset_seen;\n\n// ===== OUTPUTS =====\nout1 = active * phasor_scaled;\nout2 = active * beat_index_out;\nout3 = active * step_count_out;\nout4 = active * total_index_out;\n\n// Debug outputs\nout5 = fractional_offset;\nout6 = mode_internal;\nout7 = shuffle_internal;  // NEW: Show current shuffle state\nout8 = sequence_boundary;\n",
+					"fontface" : 0,
+					"fontname" : "<Monospaced>",
+					"fontsize" : 12.0,
+					"id" : "obj-5",
+					"maxclass" : "codebox",
+					"numinlets" : 1,
+					"numoutlets" : 8,
+					"outlettype" : [ "", "", "", "", "", "", "", "" ],
+					"patching_rect" : [ 50.0, 57.0, 340.0, 200.0 ]
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-1",
+					"maxclass" : "newobj",
+					"numinlets" : 0,
+					"numoutlets" : 1,
+					"outlettype" : [ "" ],
+					"patching_rect" : [ 50.0, 14.0, 28.0, 22.0 ],
+					"text" : "in 1"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-4",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 54.0, 390.0, 35.0, 22.0 ],
+					"text" : "out 1"
+				}
+
+			}
+ ],
+		"lines" : [ 			{
+				"patchline" : 				{
+					"destination" : [ "obj-5", 0 ],
+					"source" : [ "obj-1", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-10", 0 ],
+					"source" : [ "obj-5", 5 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-11", 0 ],
+					"source" : [ "obj-5", 6 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-12", 0 ],
+					"source" : [ "obj-5", 7 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-4", 0 ],
+					"source" : [ "obj-5", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-6", 0 ],
+					"source" : [ "obj-5", 1 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-7", 0 ],
+					"source" : [ "obj-5", 2 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-8", 0 ],
+					"source" : [ "obj-5", 3 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-9", 0 ],
+					"source" : [ "obj-5", 4 ]
+				}
+
+			}
+ ],
+		"saved_attribute_attributes" : 		{
+			"default_plcolor" : 			{
+				"expression" : ""
+			}
+
+		}
+
+	}
+
+}

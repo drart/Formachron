@@ -22,7 +22,6 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 - **Per-step muting**: Individual note probability control
 - **Audio routing**: Route each voice to external outputs (1-16)
 - **Live API integration**: Device selection awareness and control surface management
-- **LED feedback**: Real-time visual feedback on Push pads and buttons
 
 ## TODO
 - Add debugging tools to log phasor state vs. sequencer state vs. visual feedback
@@ -30,13 +29,12 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 - Send `selectedSequence -1` when all sequences are deleted (deselection case)
 - Write sequences into Ableton clips
 - Read clips into Formachron sequences
-- End behavior modes (hold, repeat)
 - Queue region changes to next bar
-- Advanced heuristics for note generation
+- heuristics for note generation
 
 ## Known Issues
 - Single-note regions don't flash (design decision: should they subdivide?)
-- button_matrix syncing isn't super tight (recursive v8 calls probably not good)
+- button_matrix syncing isn't super tight (syncing via v8 javascript isn't idea)
 
 ## Citation
 
