@@ -1,7 +1,17 @@
 Formachron
 ==========
 
-An 8-voice ansiorhythmic sequencer for Ableton Push, designed for live performance and quick creation of complex polyrhythmic, polymetric, and polyphasic patterns. Current development is focused on Ableton Push Standalone. 
+An 8-voice ansiorhythmic sequencer for Ableton Push and Launchpad, designed for live performance and quick creation of complex polyrhythmic, polymetric, and polyphasic patterns.
+
+## Hardware Compatibility
+
+Formachron supports multiple hardware controllers with automatic detection:
+- **Push 3** (recommended) - Full feature support
+- **Push 1** - Full feature support with Push 1 color palette
+- **Launchpad Mini MK1** - Core features (limited mode buttons)
+- **MIDI Input** - Works without control surface hardware (no hardware mode)
+
+The device automatically detects your connected hardware and loads the appropriate button mappings and color palette.
 
 ## Overview
 
@@ -16,12 +26,14 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 
 ### Implemented
 - **8 independent voices** with spatial grid representation
-- **Mode switching** via Push buttons (Shift, Select, Mute, Delete, New, etc.)
-- **Scene Launch buttons** control subdivision mode per sequence
+- **Hardware abstraction** - Auto-detects Push 1/3 and Launchpad controllers
+- **Mode switching** via hardware buttons (Shift, Select, Mute, Delete, New, etc.)
+- **Subdivision control** - Scene Launch buttons (Push) or right-side clip buttons (Launchpad)
 - **Phase shifting**: Set start point within sequence loop
 - **Per-step muting**: Individual note probability control
 - **Audio routing**: Route each voice to external outputs (1-16)
 - **Live API integration**: Device selection awareness and control surface management
+- **Graceful degradation**: Works with or without control surface hardware
 
 ## TODO
 - Add debugging tools to log phasor state vs. sequencer state vs. visual feedback
@@ -32,9 +44,45 @@ Unlike traditional grid sequencers that limit all patterns to a single subdivisi
 - Queue region changes to next bar
 - heuristics for note generation
 
+## Troubleshooting
+
+### Control Surface Not Detected
+
+If formachron detects the wrong controller or shows "ghost devices":
+
+1. **Check Live Preferences**:
+   - Open Live → Preferences → Link/Tempo/MIDI
+   - For unused/disconnected controllers, set **Control Surface** to "None"
+   - Keep **Input** and **Output** ports selected (don't set to "None")
+   - This tells Live you deliberately disabled that controller
+
+2. **Verify Connected Hardware**:
+   - Check Max Console for "Using hardware profile: [device name]"
+   - Send `listsurfaces` message to controlsurfacehandler to see detected devices
+   - Use `selectsurface N` to manually choose a different controller
+
+3. **Restart Live**:
+   - After changing MIDI preferences, restart Live for changes to take effect
+
+### Manual Hardware Selection
+
+If you have multiple controllers and want to switch between them:
+
+1. Send `listsurfaces` to controlsurfacehandler object
+2. Note the index number of your desired controller
+3. Send `selectsurface N` (where N is the index) to switch
+
+### Launchpad Limitations
+
+Launchpad Mini MK1 lacks dedicated mode buttons. Workarounds:
+- Use MIDI mapping in Ableton to map mode changes to computer keys
+- Use unused Launchpad buttons for mode switching (requires code modification)
+- Control modes from Max patch interface
+
 ## Known Issues
 - Single-note regions don't flash (design decision: should they subdivide?)
-- button_matrix syncing isn't super tight (syncing via v8 javascript isn't idea)
+- button_matrix syncing isn't super tight (syncing via v8 javascript isn't ideal)
+- **Region modification visual-audio desync**: When a region is modified, LED feedback updates immediately but the audio pattern doesn't change until the current loop completes, creating a disconnect between what the user sees and hears
 
 ## Citation
 

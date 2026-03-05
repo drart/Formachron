@@ -4,13 +4,21 @@
 
 const ControlSurface = require('./lib/controlsurface.js');
 
+// Hardware profiles
+const Push3 = require('./lib/hardware/push3.js');
+const Push1 = require('./lib/hardware/push1.js');
+const Launchpad = require('./lib/hardware/launchpad.js');
+
 inlets = 1;
 outlets = 2;
 
 var controlSurface = null;
+var hardwareProfile = null;
 var thisDeviceId = null;
-var selectedDeviceObserver = null;
+var thisDeviceTrackId = null;  // Which track is our device on?
+var selectedTrackObserver = null;  // Observes track changes
 var isDeviceSelected = false;
+var availableSurfaces = [];  // Store list of available surfaces
 
 // Utility to parse Live API object ID responses
 function parseObjectIds(rawResponse) {
@@ -43,28 +51,93 @@ function bang(){
 
     post("ControlSurfaceHandler: Found " + controlSurfaceCount + " control surface(s)\n");
 
-    // Find first active control surface
-    var controlSurfaceAPI = null;
+    // Find all available control surfaces and check connectivity
+    availableSurfaces = [];  // Reset module-level variable
     for(var i = 0; i < controlSurfaceCount; i++){
         var cs = new LiveAPI(null, "control_surfaces " + i);
 
         if(cs.id !== '0'){
-            controlSurfaceAPI = cs;
-            post("ControlSurfaceHandler: Using control surface " + i + ": " + cs.type + "\n");
+            // Check if control surface is actually connected by trying to get controls
+            var controlNames = cs.call("get_control_names");
+            var hasControls = (controlNames && controlNames.length > 0);
+
+            post("ControlSurfaceHandler: Surface " + i + ": " + cs.type +
+                 " (id=" + cs.id + ", hasControls=" + hasControls + ")\n");
+
+            if(hasControls){
+                availableSurfaces.push({
+                    index: i,
+                    api: cs,
+                    type: cs.type,
+                    controlCount: controlNames.length
+                });
+            }
+        }
+    }
+
+    if(availableSurfaces.length === 0){
+        post("ControlSurfaceHandler: No connected control surfaces found\n");
+        return;
+    }
+
+    // Log all available surfaces
+    post("ControlSurfaceHandler: Found " + availableSurfaces.length + " connected surface(s):\n");
+    for(var i = 0; i < availableSurfaces.length; i++){
+        post("  [" + i + "] " + availableSurfaces[i].type +
+             " (index " + availableSurfaces[i].index + ", " +
+             availableSurfaces[i].controlCount + " controls)\n");
+    }
+
+    // Prefer Push 3 > Push 1 > other surfaces
+    var selectedSurface = null;
+    for(var i = 0; i < availableSurfaces.length; i++){
+        if(availableSurfaces[i].type === "Push3"){
+            selectedSurface = availableSurfaces[i];
+            post("ControlSurfaceHandler: Selected Push 3 (preferred)\n");
             break;
         }
     }
 
-    if(!controlSurfaceAPI || controlSurfaceAPI.id === '0'){
-        post("ControlSurfaceHandler: No active control surface found\n");
-        return;
+    if(!selectedSurface){
+        for(var i = 0; i < availableSurfaces.length; i++){
+            if(availableSurfaces[i].type === "Push"){
+                selectedSurface = availableSurfaces[i];
+                post("ControlSurfaceHandler: Selected Push 1 (preferred)\n");
+                break;
+            }
+        }
     }
+
+    // Fall back to first available surface if no Push found
+    if(!selectedSurface){
+        selectedSurface = availableSurfaces[0];
+        post("ControlSurfaceHandler: Selected " + selectedSurface.type + " (first available)\n");
+    }
+
+    var controlSurfaceAPI = selectedSurface.api;
 
     // Create ControlSurface wrapper
     controlSurface = new ControlSurface(controlSurfaceAPI);
 
-    // Setup device selection monitoring FIRST
-    setupDeviceSelection();
+    // Detect hardware type and load appropriate profile
+    var csType = controlSurfaceAPI.type;
+    post("ControlSurfaceHandler: Control surface type: " + csType + "\n");
+
+    if(csType === "Push3"){
+        hardwareProfile = Push3;
+    } else if(csType === "Push"){
+        hardwareProfile = Push1;
+    } else if(csType === "Launchpad"){
+        hardwareProfile = Launchpad;
+    } else {
+        post("ControlSurfaceHandler: Unknown control surface type, defaulting to Push 3\n");
+        hardwareProfile = Push3;
+    }
+
+    post("ControlSurfaceHandler: Using hardware profile: " + hardwareProfile.name + "\n");
+
+    // Notify formachron about hardware type
+    outlet(0, "hardware", hardwareProfile.type);
 
     // Log available controls for debugging
     post("ControlSurfaceHandler: Available controls:\n");
@@ -73,93 +146,77 @@ function bang(){
         post("  " + names[i] + "\n");
     }
 
-    // Setup button mappings AFTER observer is established
+    // Setup button mappings FIRST (before observers)
     setupButtons();
 
-    // Check initial selection state (since early callbacks were blocked)
-    var currentSelectedDevice = selectedDeviceObserver.get("selected_device");
-    var currentIds = parseObjectIds(currentSelectedDevice);
-    if(currentIds.length > 0){
-        var currentDeviceId = currentIds[0];
-        var currentObj = new LiveAPI(null, "id " + currentDeviceId);
-        // Accept any device type (MaxDevice, PluginDevice, etc)
-        if(currentObj.type.indexOf("Device") !== -1 && currentDeviceId === thisDeviceId){
-            post("ControlSurfaceHandler: This device is selected on init\n");
-            isDeviceSelected = true;
-            controlSurface.onDeviceSelectionChange(true);
-            // Notify formachron that device is selected
-            outlet(0, "device_selected", 1);
-        }
-    }
+    // Setup device selection monitoring (observer will fire immediately)
+    setupDeviceSelection();
 
     post("ControlSurfaceHandler: Initialization complete\n");
 }
 
 function setupDeviceSelection(){
-    // Observe selected_device property on track view FIRST
-    selectedDeviceObserver = new LiveAPI(selectedDeviceCallback, "live_set view selected_track view");
-    selectedDeviceObserver.property = "selected_device";
+    // Get this device's ID and find which track it's on
+    var thisDevice = new LiveAPI(null, "this_device");
+    thisDeviceId = parseInt(thisDevice.id);
 
-    // Get this device's ID AFTER observer is set up
-    thisDeviceId = parseInt(new LiveAPI(null, "this_device").id);
-    post("ControlSurfaceHandler: This device ID: " + thisDeviceId + "\n");
+    var canonicalParent = thisDevice.get("canonical_parent");
+    var trackIds = parseObjectIds(canonicalParent);
+    if(trackIds.length > 0){
+        thisDeviceTrackId = trackIds[0];
+        post("ControlSurfaceHandler: This device ID: " + thisDeviceId + ", on track ID: " + thisDeviceTrackId + "\n");
+    } else {
+        post("ControlSurfaceHandler: Could not determine device's track\n");
+        return;
+    }
+
+    // Watch selected_track - when it changes, check if it's our track
+    selectedTrackObserver = new LiveAPI(trackChangeCallback, "live_set view");
+    selectedTrackObserver.property = "selected_track";
+    post("ControlSurfaceHandler: Track observer established\n");
 }
 
-function selectedDeviceCallback(args){
-    // Don't process if not fully initialized
-    if(!controlSurface || thisDeviceId === null){
+function checkAndUpdateSelection(){
+    if(!controlSurface || thisDeviceTrackId === null){
         return;
     }
 
-    // Args format: ["selected_device", "id", deviceId]
-    var ids = parseObjectIds(args.join(','));
+    // Get the currently selected track
+    var liveSetView = new LiveAPI(null, "live_set view");
+    var currentSelectedTrack = liveSetView.get("selected_track");
+    var trackIds = parseObjectIds(currentSelectedTrack);
 
-    if(ids.length === 0){
+    if(trackIds.length === 0){
         return;
     }
 
-    var selectedDeviceId = ids[0];
+    var selectedTrackId = trackIds[0];
+    var newIsSelected = (selectedTrackId === thisDeviceTrackId);
 
-    // Filter out non-device objects (like the View itself)
-    var selectedObj = new LiveAPI(null, "id " + selectedDeviceId);
+    post("ControlSurfaceHandler: Selected track ID: " + selectedTrackId + ", our track ID: " + thisDeviceTrackId + " -> " + (newIsSelected ? "SELECTED" : "NOT SELECTED") + "\n");
 
-    // Validate ID before using (prevent stale ID issues)
-    var actualId = parseInt(selectedObj.id);
-    if(actualId !== selectedDeviceId){
-        post("ControlSurfaceHandler: Stale device ID in callback (expected " + selectedDeviceId + ", got " + actualId + ")\n");
-        return;
+    // Only update if state changed
+    if(newIsSelected !== isDeviceSelected){
+        isDeviceSelected = newIsSelected;
+        controlSurface.onDeviceSelectionChange(isDeviceSelected);
+
+        var selectedValue = isDeviceSelected ? 1 : 0;
+        var t = new Task(function(){
+            outlet(0, "device_selected", selectedValue);
+        });
+        t.schedule(100);
     }
-
-    var objType = selectedObj.type;
-
-    // Accept Device, MaxDevice, PluginDevice, etc - anything containing "Device"
-    if(objType.indexOf("Device") === -1){
-        return;
-    }
-
-    var isSelected = (selectedDeviceId === thisDeviceId);
-
-    post("ControlSurfaceHandler: Device " + (isSelected ? "selected" : "deselected") + "\n");
-
-    // Track selection state
-    var wasSelected = isDeviceSelected;
-    isDeviceSelected = isSelected;
-
-    // Notify ControlSurface about selection change
-    controlSurface.onDeviceSelectionChange(isSelected);
-
-    // Notify formachron about device selection change
-    // Delay 100ms to allow hardware to settle after grab/release
-    var selectedValue = isSelected ? 1 : 0;
-    var t = new Task(function(){
-        outlet(0, "device_selected", selectedValue);
-    });
-    t.schedule(100);
 }
+
+function trackChangeCallback(args){
+    post("ControlSurfaceHandler: Track changed\n");
+    checkAndUpdateSelection();
+}
+
 
 function setupButtons(){
-    if(!controlSurface){
-        post("ControlSurfaceHandler: No control surface available\n");
+    if(!controlSurface || !hardwareProfile){
+        post("ControlSurfaceHandler: No control surface or hardware profile available\n");
         return;
     }
 
@@ -167,108 +224,125 @@ function setupButtons(){
     // Callbacks receive full args array: ["value", velocity, ...]
 
     // New Button → Mode 0 (default/entry mode)
-    controlSurface.claimControl("New_Button", function(args){
-        if(args.length > 1 && args[1] > 0){
-            outlet(0, "mode", 0);
-        }
-    }, {
-        mode: "observe",
-        requireSelection: false,
-        releaseOnDeselect: false
-    });
+    if(hardwareProfile.controls.mode_new){
+        controlSurface.claimControl(hardwareProfile.controls.mode_new, function(args){
+            if(args.length > 1 && args[1] > 0){
+                outlet(0, "mode", 0);
+            }
+        }, {
+            mode: "observe",
+            requireSelection: false,
+            releaseOnDeselect: false
+        });
+    }
 
     // Shift Button → Mode 1 (phase shift)
-    controlSurface.claimControl("Shift_Button", function(args){
-        if(args.length > 1 && args[1] > 0){
-            outlet(0, "mode", 1);
-        }
-    }, {
-        mode: "observe",
-        requireSelection: false,
-        releaseOnDeselect: false
-    });
+    if(hardwareProfile.controls.mode_shift){
+        controlSurface.claimControl(hardwareProfile.controls.mode_shift, function(args){
+            if(args.length > 1 && args[1] > 0){
+                outlet(0, "mode", 1);
+            }
+        }, {
+            mode: "observe",
+            requireSelection: false,
+            releaseOnDeselect: false
+        });
+    }
 
-    // Global Mute Button → Mode 3 (mute notes)
-    controlSurface.claimControl("Global_Mute_Button", function(args){
-        if(args.length > 1 && args[1] > 0){
-            outlet(0, "mode", 3);
-        }
-    }, {
-        mode: "observe",
-        requireSelection: false,
-        releaseOnDeselect: false
-    });
+    // Mute Button → Mode 3 (mute notes)
+    if(hardwareProfile.controls.mode_mute){
+        controlSurface.claimControl(hardwareProfile.controls.mode_mute, function(args){
+            if(args.length > 1 && args[1] > 0){
+                outlet(0, "mode", 3);
+            }
+        }, {
+            mode: "observe",
+            requireSelection: false,
+            releaseOnDeselect: false
+        });
+    }
 
     // Delete Button → Mode 4 (remove region)
-    controlSurface.claimControl("Delete_Button", function(args){
-        if(args.length > 1 && args[1] > 0){
-            outlet(0, "mode", 4);
-        }
-    }, {
-        mode: "observe",
-        requireSelection: false,
-        releaseOnDeselect: false
-    });
+    if(hardwareProfile.controls.mode_delete){
+        controlSurface.claimControl(hardwareProfile.controls.mode_delete, function(args){
+            if(args.length > 1 && args[1] > 0){
+                outlet(0, "mode", 4);
+            }
+        }, {
+            mode: "observe",
+            requireSelection: false,
+            releaseOnDeselect: false
+        });
+    }
 
     // Select Button → Mode 2 (select sequence/cell)
-    controlSurface.claimControl("Select_Button", function(args){
-        if(args.length > 1 && args[1] > 0){
-            outlet(0, "mode", 2);
-        }
-    }, {
-        mode: "observe",
-        requireSelection: false,
-        releaseOnDeselect: false
-    });
+    if(hardwareProfile.controls.mode_select){
+        controlSurface.claimControl(hardwareProfile.controls.mode_select, function(args){
+            if(args.length > 1 && args[1] > 0){
+                outlet(0, "mode", 2);
+            }
+        }, {
+            mode: "observe",
+            requireSelection: false,
+            releaseOnDeselect: false
+        });
+    }
 
     // Convert Button → Mode 5 (move region)
-    controlSurface.claimControl("Convert", function(args){
-        if(args.length > 1 && args[1] > 0){
-            outlet(0, "mode", 5);
-        }
-    }, {
-        mode: "observe",
-        requireSelection: false,
-        releaseOnDeselect: false
-    });
+    if(hardwareProfile.controls.mode_convert){
+        controlSurface.claimControl(hardwareProfile.controls.mode_convert, function(args){
+            if(args.length > 1 && args[1] > 0){
+                outlet(0, "mode", 5);
+            }
+        }, {
+            mode: "observe",
+            requireSelection: false,
+            releaseOnDeselect: false
+        });
+    }
 
-    // Scene Select Buttons (0-7) - map to output channels
+    // Subdivision Buttons (0-7) - map to output channels
     for(var i = 0; i < 8; i++){
         (function(index){
-            controlSurface.claimControl("Scene_Launch_Button" + index, function(args){
-                if(args.length > 1 && args[1] > 0){
-                    outlet(0, "output_channel", index);
-                }
-            }, {
-                mode: "grab",
-                requireSelection: true,
-                releaseOnDeselect: true
-            });
+            var buttonName = hardwareProfile.controls.subdivision(index);
+            if(buttonName){
+                controlSurface.claimControl(buttonName, function(args){
+                    if(args.length > 1 && args[1] > 0){
+                        outlet(0, "output_channel", index);
+                    }
+                }, {
+                    mode: "grab",
+                    requireSelection: true,
+                    releaseOnDeselect: true
+                });
+            }
         })(i);
     }
 
     // Button Matrix - grab when device selected, release when deselected
-    controlSurface.claimControl("Button_Matrix", function(args){
-        // args format: ["value", velocity, x, y, 1]
-        // velocity: 0 for release, >0 for press
-        // x, y: 0-7 grid coordinates
-        // last arg: always 1 (purpose unknown)
-        if(args.length >= 5){
-            var velocity = args[1];
-            var x = args[2];
-            var y = args[3];
+    if(hardwareProfile.controls.button_matrix){
+        controlSurface.claimControl(hardwareProfile.controls.button_matrix, function(args){
+            // args format: ["value", velocity, x, y, 1]
+            // velocity: 0 for release, >0 for press
+            // x, y: 0-7 grid coordinates
+            // last arg: always 1 (purpose unknown)
+            if(args.length >= 5){
+                var velocity = args[1];
+                var x = args[2];
+                var y = args[3];
 
-            // Normalize velocity to 0 or 1 for formachron
-            var normalizedVelocity = (velocity > 0) ? 1 : 0;
+                // Normalize velocity to 0 or 1 for formachron
+                var normalizedVelocity = (velocity > 0) ? 1 : 0;
 
-            // Send cell message to formachron: cell x y (0|1)
-            outlet(0, "cell", x, y, normalizedVelocity);
-        }
-    }, {
-        mode: "grab",
-        requireSelection: true,
-        releaseOnDeselect: true
-    });
+                // Send cell message to formachron: cell x y (0|1)
+                outlet(0, "cell", x, y, normalizedVelocity);
+            }
+        }, {
+            mode: "grab",
+            requireSelection: true,
+            releaseOnDeselect: true
+        });
+    }
 }
 
 // Handle incoming messages from formachron (LED updates, etc.)
@@ -278,30 +352,111 @@ function anything(){
 
     if(messageName === "control-surface"){
         // args: [x, y, colorNumber]
-        if(args.length >= 3 && controlSurface){
+        if(args.length >= 3 && controlSurface && hardwareProfile){
             var x = args[0];
             var y = args[1];
             var colorNumber = args[2];
 
             // Only send to hardware when device is selected
-            if(isDeviceSelected){
-                controlSurface.sendValue("Button_Matrix", x, y, colorNumber);
+            if(isDeviceSelected && hardwareProfile.controls.button_matrix){
+                controlSurface.sendValue(hardwareProfile.controls.button_matrix, x, y, colorNumber);
             }
         }
     }
 
     if(messageName === "scene-button"){
         // args: [buttonIndex, colorNumber]
-        if(args.length >= 2 && controlSurface){
+        if(args.length >= 2 && controlSurface && hardwareProfile){
             var buttonIndex = args[0];
             var colorNumber = args[1];
 
             // Only send to hardware when device is selected
             if(isDeviceSelected){
-                controlSurface.sendValue("Scene_Launch_Button" + buttonIndex, colorNumber);
+                var buttonName = hardwareProfile.controls.subdivision(buttonIndex);
+                if(buttonName){
+                    controlSurface.sendValue(buttonName, colorNumber);
+                }
             }
         }
     }
+}
+
+// List all available control surfaces
+function listsurfaces(){
+    if(availableSurfaces.length === 0){
+        post("ControlSurfaceHandler: No control surfaces detected\n");
+        post("  Run 'bang' to scan for control surfaces\n");
+        return;
+    }
+
+    post("ControlSurfaceHandler: Available control surfaces:\n");
+    for(var i = 0; i < availableSurfaces.length; i++){
+        var marker = "";
+        if(controlSurface && availableSurfaces[i].api.id === controlSurface.controlSurface.id){
+            marker = " [CURRENT]";
+        }
+        post("  [" + i + "] " + availableSurfaces[i].type +
+             " (Live index " + availableSurfaces[i].index + ", " +
+             availableSurfaces[i].controlCount + " controls)" + marker + "\n");
+    }
+    post("\nTo select a surface, send: selectsurface <number>\n");
+}
+
+// Manually select a control surface by array index
+function selectsurface(index){
+    if(availableSurfaces.length === 0){
+        post("ControlSurfaceHandler: No surfaces available. Run 'bang' first.\n");
+        return;
+    }
+
+    if(index < 0 || index >= availableSurfaces.length){
+        post("ControlSurfaceHandler: Invalid index " + index + ". Valid range: 0-" + (availableSurfaces.length - 1) + "\n");
+        return;
+    }
+
+    post("ControlSurfaceHandler: Switching to surface " + index + ": " + availableSurfaces[index].type + "\n");
+
+    // Clean up current surface
+    if(controlSurface){
+        controlSurface.releaseAll();
+    }
+    if(selectedTrackObserver){
+        selectedTrackObserver.property = "";
+    }
+
+    // Re-initialize with selected surface
+    var controlSurfaceAPI = availableSurfaces[index].api;
+
+    // Create ControlSurface wrapper
+    controlSurface = new ControlSurface(controlSurfaceAPI);
+
+    // Detect hardware type and load appropriate profile
+    var csType = controlSurfaceAPI.type;
+    post("ControlSurfaceHandler: Control surface type: " + csType + "\n");
+
+    if(csType === "Push3"){
+        hardwareProfile = Push3;
+    } else if(csType === "Push"){
+        hardwareProfile = Push1;
+    } else if(csType === "Launchpad"){
+        hardwareProfile = Launchpad;
+    } else {
+        post("ControlSurfaceHandler: Unknown control surface type, defaulting to Push 3\n");
+        hardwareProfile = Push3;
+    }
+
+    post("ControlSurfaceHandler: Using hardware profile: " + hardwareProfile.name + "\n");
+
+    // Notify formachron about hardware type
+    outlet(0, "hardware", hardwareProfile.type);
+
+    // Setup buttons first
+    setupButtons();
+
+    // Setup device selection monitoring (observer will fire immediately)
+    setupDeviceSelection();
+
+    post("ControlSurfaceHandler: Switch complete\n");
 }
 
 // List all available control names (for debugging)
@@ -322,10 +477,10 @@ function listcontrols(){
 function notifydeleted(){
     post("ControlSurfaceHandler: Cleaning up...\n");
 
-    // Stop observing selected device
-    if(selectedDeviceObserver){
-        selectedDeviceObserver.property = "";
-        selectedDeviceObserver = null;
+    // Stop observing selected track
+    if(selectedTrackObserver){
+        selectedTrackObserver.property = "";
+        selectedTrackObserver = null;
     }
 
     // Release all control surface controls

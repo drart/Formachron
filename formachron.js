@@ -8,6 +8,11 @@ const InputManager = require('./lib/inputmanager.js');
 const Mediator = require('./lib/mediator.js');
 const OutputManager = require('./lib/outputmanager.js');
 
+// Hardware profiles
+const Push3 = require('./lib/hardware/push3.js');
+const Push1 = require('./lib/hardware/push1.js');
+const Launchpad = require('./lib/hardware/launchpad.js');
+
 var thegrid = new Grid();
 var sequencer = new Sequencer();
 
@@ -15,8 +20,11 @@ var input = new InputManager();
 var mediator = new Mediator( thegrid , sequencer);
 var output = new OutputManager( thegrid );
 
-//var colours = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'indigo', 'violet'];
-var colourNumbers = [127, 3, 7, 126, 14, 125, 20, 21];
+// Hardware profile and colors (will be set when hardware type is received)
+var hardwareProfile = Launchpad;  // Default to Launchpad
+var defaultScheme = hardwareProfile.getVoiceColors(8);
+var colourNumbers = defaultScheme.voiceColors;
+mediator.setColors(defaultScheme.colorNames);
 
 
 // Sequence mode tracking
@@ -32,13 +40,65 @@ var sequenceModes = [
 ];
 var currentSequenceMode = 5;  // Default to SIXTEENTH_TUPLET
 
+// Helper function: translate color name to hardware-specific value
+function colorNameToValue(colorName){
+	// Handle dimmed colors (pending modification feedback)
+	if(colorName.indexOf('dimmed_') === 0){
+		var baseName = colorName.substring(7);  // Remove 'dimmed_' prefix
+		if(hardwareProfile.dimmedColors && hardwareProfile.dimmedColors[baseName] !== undefined){
+			return hardwareProfile.dimmedColors[baseName];
+		}
+		// Fallback to normal color if dimmed version not defined
+		if(hardwareProfile.colors && hardwareProfile.colors[baseName] !== undefined){
+			return hardwareProfile.colors[baseName];
+		}
+		return 0;
+	}
 
-// get midi input 
+	// Handle pending delete (use dimmed red)
+	if(colorName === 'pending_delete'){
+		if(hardwareProfile.dimmedColors && hardwareProfile.dimmedColors.red !== undefined){
+			return hardwareProfile.dimmedColors.red;
+		}
+		if(hardwareProfile.colors && hardwareProfile.colors.red !== undefined){
+			return hardwareProfile.colors.red;
+		}
+		return 0;
+	}
+
+	// Normal colors
+	if(hardwareProfile && hardwareProfile.colors && hardwareProfile.colors[colorName] !== undefined){
+		return hardwareProfile.colors[colorName];
+	}
+
+	// Fallback to 0 if color not found
+	return 0;
+}
+
+// Helper function: process mediator messages and translate colors
+function processMessage(msg){
+	if(msg.channel === 'control-surface'){
+		// control-surface messages: [x, y, colorName]
+		// Translate color name (3rd element) to hardware value
+		var x = msg.data[0];
+		var y = msg.data[1];
+		var colorName = msg.data[2];
+		var colorValue = colorNameToValue(colorName);
+		post("control-surface: x=" + x + " y=" + y + " color=" + colorName + " value=" + colorValue + "\n");
+		outlet(0, 'control-surface', x, y, colorValue);
+	} else {
+		// All other messages pass through unchanged
+		outlet(0, msg.channel, msg.data);
+	}
+}
+
+
+// get midi input
 function note (n,v){
 
-	var newcell = input.input( n, v ); 
+	var newcell = input.input( n, v );
     if( newcell === undefined){
-        return; 
+        return;
     }
 	if ( newcell === null ){
 		var messages = mediator.input();
@@ -48,7 +108,7 @@ function note (n,v){
         }
 
         for(var i = 0; i < messages.length; i++){
-            outlet(0, messages[i].channel, messages[i].data );
+            processMessage(messages[i]);
         }
 	}else{
 		mediator.push( newcell );
@@ -77,7 +137,7 @@ function cell(x, y, v){
             } else if(messages[i].channel === 'sequence_deselected'){
                 // post('No sequence selected\n');
             } else {
-                outlet(0, messages[i].channel, messages[i].data );
+                processMessage(messages[i]);
             }
         }
 	}else{
@@ -89,7 +149,7 @@ function cell(x, y, v){
 function syncstep ( sequenceIndex, voiceNumber ) {
     var messages = mediator.sync( voiceNumber, sequenceIndex );
     for( var i = 0; i < messages.length; i++){
-        outlet(0, messages[i].channel, messages[i].data );
+        processMessage(messages[i]);
     }
 }
 
@@ -131,7 +191,9 @@ function output_channel(channel){
 function updateSequenceModeButtons(){
 	// Send LED updates for all 8 Scene Launch buttons
 	for(var i = 0; i < 8; i++){
-		var color = (i === currentSequenceMode) ? 10 : 1;  // 10 = selected, 1 = unselected
+		// 14 = Red Medium (selected), 13 = Red Low (unselected)
+		// IMPORTANT: Value 10 has flash flag set and causes LEDs to blink
+		var color = (i === currentSequenceMode) ? 14 : 13;
 		outlet(0, 'scene-button', i, color);
 	}
 }
@@ -154,6 +216,31 @@ function updateSceneButtonsForSelectedSequence(sequenceIndex){
 			// post("Selected sequence has subdivision mode: " + mode + "\n");
 		}
 	}
+}
+
+// Receive hardware type from controlsurfacehandler and update color palette
+function hardware(hwType){
+	post("formachron: Received hardware type: " + hwType + "\n");
+
+	// Load appropriate hardware profile
+	if(hwType === "Push3"){
+		hardwareProfile = Push3;
+	} else if(hwType === "Push"){
+		hardwareProfile = Push1;
+	} else if(hwType === "Launchpad"){
+		hardwareProfile = Launchpad;
+	} else {
+		post("formachron: Unknown hardware type, using default\n");
+		return;
+	}
+
+	post("formachron: Using " + hardwareProfile.name + " color palette\n");
+
+	// Get voice colors from hardware profile (8 voices)
+	var colorScheme = hardwareProfile.getVoiceColors(8);
+	colourNumbers = colorScheme.voiceColors;
+
+	mediator.setColors(colorScheme.colorNames);
 }
 
 function device_selected(isSelected){
